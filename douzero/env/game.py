@@ -27,7 +27,7 @@ class InfoSet(object):
     def __init__(self, player_position):
         # The player position, i.e., landlord, landlord_down, or landlord_up
         self.player_position = player_position
-        # The hand cands of the current player. A list.
+        # The hand cards of the current player. A list.
         self.player_hand_cards = None
         # The number of cards left for each player. It is a dict with str-->int 
         self.num_cards_left_dict = {
@@ -35,7 +35,7 @@ class InfoSet(object):
             'landlord_up': 17,
             'landlord_down': 17,
         }
-        # The three landload cards. A list.
+        # The three landlord cards. A list.
         self.three_landlord_cards = None
         # The historical moves. It is a list of list
         self.card_play_action_seq = None
@@ -47,9 +47,9 @@ class InfoSet(object):
         self.last_move = None
         # The most recent two moves
         self.last_two_moves = None
-        # The last moves for all the postions
+        # The last moves for all the positions
         self.last_move_dict = None
-        # The played cands so far. It is a list.
+        # The played cards so far. It is a list.
         self.played_cards = None
         # The hand cards of all the players. It is a dict. 
         self.all_handcards = None
