@@ -15,6 +15,50 @@ bombs = [[3, 3, 3, 3], [4, 4, 4, 4], [5, 5, 5, 5], [6, 6, 6, 6],
          [11, 11, 11, 11], [12, 12, 12, 12], [13, 13, 13, 13], [14, 14, 14, 14],
          [17, 17, 17, 17], [20, 30]]
 
+
+class InfoSet(object):
+    """
+    The game state is described as infoset, which
+    includes all the information in the current situation,
+    such as the hand cards of the three players, the
+    historical moves, etc.
+    """
+
+    def __init__(self, player_position):
+        # The player position, i.e., landlord, landlord_down, or landlord_up
+        self.player_position = player_position
+        # The hand cands of the current player. A list.
+        self.player_hand_cards = None
+        # The number of cards left for each player. It is a dict with str-->int 
+        self.num_cards_left_dict = {
+            'landlord': 20,
+            'landlord_up': 17,
+            'landlord_down': 17,
+        }
+        # The three landload cards. A list.
+        self.three_landlord_cards = None
+        # The historical moves. It is a list of list
+        self.card_play_action_seq = None
+        # The union of the hand cards of the other two players for the current player 
+        self.other_hand_cards = None
+        # The legal actions for the current move. It is a list of list
+        self.legal_actions = None
+        # The most recent valid move
+        self.last_move = None
+        # The most recent two moves
+        self.last_two_moves = None
+        # The last moves for all the postions
+        self.last_move_dict = None
+        # The played cands so far. It is a list.
+        self.played_cards = None
+        # The hand cards of all the players. It is a dict. 
+        self.all_handcards = None
+        # Last player position that plays a valid move, i.e., not `pass`
+        self.last_pid = None
+        # The number of bombs played so far
+        self.bomb_num = None
+
+
 class GameEnv(object):
 
     def __init__(self, players):
@@ -47,8 +91,8 @@ class GameEnv(object):
                            'farmer': 0}
 
         self.info_sets = {'landlord': InfoSet('landlord'),
-                         'landlord_up': InfoSet('landlord_up'),
-                         'landlord_down': InfoSet('landlord_down')}
+                          'landlord_up': InfoSet('landlord_up'),
+                          'landlord_down': InfoSet('landlord_down')}
 
         self.bomb_num = 0
         self.last_pid = 'landlord'
@@ -282,8 +326,8 @@ class GameEnv(object):
         self.last_two_moves = []
 
         self.info_sets = {'landlord': InfoSet('landlord'),
-                         'landlord_up': InfoSet('landlord_up'),
-                         'landlord_down': InfoSet('landlord_down')}
+                          'landlord_up': InfoSet('landlord_up'),
+                          'landlord_down': InfoSet('landlord_down')}
 
         self.bomb_num = 0
         self.last_pid = 'landlord'
@@ -333,39 +377,221 @@ class GameEnv(object):
 
         return deepcopy(self.info_sets[self.acting_player_position])
 
-class InfoSet(object):
-    """
-    The game state is described as infoset, which
-    includes all the information in the current situation,
-    such as the hand cards of the three players, the
-    historical moves, etc.
-    """
-    def __init__(self, player_position):
-        # The player position, i.e., landlord, landlord_down, or landlord_up
-        self.player_position = player_position
-        # The hand cands of the current player. A list.
-        self.player_hand_cards = None
-        # The number of cards left for each player. It is a dict with str-->int 
-        self.num_cards_left_dict = None
-        # The three landload cards. A list.
+
+class GameRealEnv(object):
+
+    def __init__(self, players):
+        self.players = players
+        self.current_player = None
+
+        self.reset()
+
+    def card_play_init(self, _player_position, _hand_cards, _three_landlord_cards):
+        self.player_position = _player_position
+        self.info_sets[_player_position].player_hand_cards = _hand_cards
+        self.three_landlord_cards = _three_landlord_cards
+        self.current_player = self.players[_player_position]
+        for m_card in _hand_cards:
+            self.card_counter[m_card] -= 1
+
+    def step(self, _player_position, _played_cards):
+        if _player_position != self.player_position:
+            action = _played_cards
+            for m_card in _played_cards:
+                self.card_counter[m_card] -= 1
+        else:
+            current_infoset = self.get_infoset()
+            action = self.current_player.act(current_infoset)
+            self.update_acting_player_hand_cards(action)
+        self.num_cards_left_dict[_player_position] -= len(action)
+        if action in bombs:
+            self.bomb_num += 1
+
+        self.last_move_dict[_player_position] = action.copy()
+        self.card_play_action_seq.append(action)
+        self.played_cards[_player_position] += action
+
+        if _player_position == 'landlord' and \
+                len(action) > 0 and \
+                len(self.three_landlord_cards) > 0:
+            for m_card in action:
+                if len(self.three_landlord_cards) > 0:
+                    if m_card in self.three_landlord_cards:
+                        self.three_landlord_cards.remove(m_card)
+                else:
+                    break
+        return action
+
+    def get_last_move(self):
+        last_move = []
+        if len(self.card_play_action_seq) != 0:
+            if len(self.card_play_action_seq[-1]) == 0:
+                last_move = self.card_play_action_seq[-2]
+            else:
+                last_move = self.card_play_action_seq[-1]
+
+        return last_move
+
+    def get_last_two_moves(self):
+        last_two_moves = [[], []]
+        for card in self.card_play_action_seq[-2:]:
+            last_two_moves.insert(0, card)
+            last_two_moves = last_two_moves[:2]
+        return last_two_moves
+
+    def update_acting_player_hand_cards(self, action):
+        if action:
+            for card in action:
+                self.info_sets[self.player_position].player_hand_cards.remove(card)
+            self.info_sets[self.player_position].player_hand_cards.sort()
+
+    def get_legal_card_play_actions(self):
+        mg = MovesGener(self.info_sets[self.player_position].player_hand_cards)
+
+        action_sequence = self.card_play_action_seq
+
+        rival_move = []
+        if len(action_sequence) != 0:
+            if len(action_sequence[-1]) == 0:
+                rival_move = action_sequence[-2]
+            else:
+                rival_move = action_sequence[-1]
+
+        rival_type = md.get_move_type(rival_move)
+        rival_move_type = rival_type['type']
+        rival_move_len = rival_type.get('len', 1)
+        moves = list()
+
+        if rival_move_type == md.TYPE_0_PASS:
+            moves = mg.gen_moves()
+
+        elif rival_move_type == md.TYPE_1_SINGLE:
+            all_moves = mg.gen_type_1_single()
+            moves = ms.filter_type_1_single(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_2_PAIR:
+            all_moves = mg.gen_type_2_pair()
+            moves = ms.filter_type_2_pair(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_3_TRIPLE:
+            all_moves = mg.gen_type_3_triple()
+            moves = ms.filter_type_3_triple(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_4_BOMB:
+            all_moves = mg.gen_type_4_bomb() + mg.gen_type_5_king_bomb()
+            moves = ms.filter_type_4_bomb(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_5_KING_BOMB:
+            moves = []
+
+        elif rival_move_type == md.TYPE_6_3_1:
+            all_moves = mg.gen_type_6_3_1()
+            moves = ms.filter_type_6_3_1(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_7_3_2:
+            all_moves = mg.gen_type_7_3_2()
+            moves = ms.filter_type_7_3_2(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_8_SERIAL_SINGLE:
+            all_moves = mg.gen_type_8_serial_single(repeat_num=rival_move_len)
+            moves = ms.filter_type_8_serial_single(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_9_SERIAL_PAIR:
+            all_moves = mg.gen_type_9_serial_pair(repeat_num=rival_move_len)
+            moves = ms.filter_type_9_serial_pair(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_10_SERIAL_TRIPLE:
+            all_moves = mg.gen_type_10_serial_triple(repeat_num=rival_move_len)
+            moves = ms.filter_type_10_serial_triple(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_11_SERIAL_3_1:
+            all_moves = mg.gen_type_11_serial_3_1(repeat_num=rival_move_len)
+            moves = ms.filter_type_11_serial_3_1(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_12_SERIAL_3_2:
+            all_moves = mg.gen_type_12_serial_3_2(repeat_num=rival_move_len)
+            moves = ms.filter_type_12_serial_3_2(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_13_4_2:
+            all_moves = mg.gen_type_13_4_2()
+            moves = ms.filter_type_13_4_2(all_moves, rival_move)
+
+        elif rival_move_type == md.TYPE_14_4_22:
+            all_moves = mg.gen_type_14_4_22()
+            moves = ms.filter_type_14_4_22(all_moves, rival_move)
+
+        if rival_move_type not in [md.TYPE_0_PASS,
+                                   md.TYPE_4_BOMB, md.TYPE_5_KING_BOMB]:
+            moves = moves + mg.gen_type_4_bomb() + mg.gen_type_5_king_bomb()
+
+        if len(rival_move) != 0:  # rival_move is not 'pass'
+            moves = moves + [[]]
+
+        for m in moves:
+            m.sort()
+
+        return moves
+
+    def reset(self):
+        self.card_play_action_seq = []
         self.three_landlord_cards = None
-        # The historical moves. It is a list of list
-        self.card_play_action_seq = None
-        # The union of the hand cards of the other two players for the current player 
-        self.other_hand_cards = None
-        # The legal actions for the current move. It is a list of list
-        self.legal_actions = None
-        # The most recent valid move
-        self.last_move = None
-        # The most recent two moves
-        self.last_two_moves = None
-        # The last moves for all the postions
-        self.last_move_dict = None
-        # The played cands so far. It is a list.
-        self.played_cards = None
-        # The hand cards of all the players. It is a dict. 
-        self.all_handcards = None
-        # Last player position that plays a valid move, i.e., not `pass`
-        self.last_pid = None
-        # The number of bombs played so far
-        self.bomb_num = None
+
+        self.last_move_dict = {'landlord': [],
+                               'landlord_up': [],
+                               'landlord_down': []}
+
+        self.played_cards = {'landlord': [],
+                             'landlord_up': [],
+                             'landlord_down': []}
+        self.card_counter = {m_card: 4
+                             for m_card in EnvCard2RealCard.keys()
+                             }
+        self.card_counter[20] -= 3
+        self.card_counter[30] -= 3
+        self.last_move = []
+        self.last_two_moves = []
+
+        self.info_sets = {
+            'landlord': InfoSet('landlord'),
+            'landlord_up': InfoSet('landlord_up'),
+            'landlord_down': InfoSet('landlord_down')
+        }
+
+        self.bomb_num = 0
+        self.player_position = 'landlord'
+        self.num_cards_left_dict = {
+            'landlord': 20,
+            'landlord_up': 17,
+            'landlord_down': 17,
+        }
+
+    def get_infoset(self):
+        self.info_sets[self.player_position].legal_actions = self.get_legal_card_play_actions()
+
+        self.info_sets[self.player_position].bomb_num = self.bomb_num
+
+        self.info_sets[self.player_position].last_move = self.get_last_move()
+
+        self.info_sets[self.player_position].last_two_moves = self.get_last_two_moves()
+
+        self.info_sets[self.player_position].last_move_dict = self.last_move_dict
+
+        self.info_sets[self.player_position].num_cards_left_dict = self.num_cards_left_dict
+        other_hand_cards = []
+        for m_key, m_count in self.card_counter.items():
+            if m_count > 0:
+                other_hand_cards.extend([m_key, ] * m_count)
+        self.info_sets[self.player_position].other_hand_cards = other_hand_cards
+        self.info_sets[self.player_position].played_cards = self.played_cards
+        self.info_sets[self.player_position].three_landlord_cards = \
+            self.three_landlord_cards
+        self.info_sets[self.player_position].card_play_action_seq = \
+            self.card_play_action_seq
+
+        return deepcopy(self.info_sets[self.player_position])
+
+    def is_finish(self):
+        for m_player_count in self.info_sets[self.player_position].num_cards_left_dict.values():
+            if m_player_count <= 0:
+                return True
+        return False
